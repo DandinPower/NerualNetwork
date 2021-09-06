@@ -104,7 +104,7 @@ class Neural:
         ds = self.cells[2].backward(dz)
         da,db = self.cells[1].backward(ds)
         dw,dx = self.cells[0].backward(da)
-        return (dw,db)
+        return (dw,db,dx)
 
     def getw(self):
         return self.cells[0].getw()
@@ -120,64 +120,87 @@ class Neural:
 
 class Graph:
     def __init__(self):
-        self.neurals = [Neural(0),Neural(1),Neural(2)]
+        self.neurals_0 = [Neural(0),Neural(1),Neural(2)]
+        self.neurals_1 = [Neural(0),Neural(1),Neural(2)]
         self.loss = []
         self.epochs = []
     
     def forward(self,x,y):
         loss = 0
         score = 0
-        for neural in self.neurals:
-            score += neural.forward(x)
+        for neural_0 in self.neurals_0:
+            tempy = neural_0.forward(x)
+            for neural_1 in self.neurals_1:
+                score += neural_1.forward(tempy)
         loss = y - score
-        loss /= y
-        return loss
+        #loss = loss * loss
+        if loss <= 0:
+            posorneg = -1
+        else: 
+            posorneg = 1
+        loss = abs(loss)
+        return loss,posorneg
 
     def backward(self):
         dz = 1
-        dwdbs = []
-        for neural in self.neurals:
-            dwdb = neural.backward(dz)
-            dwdbs.append(dwdb)
-        return dwdbs
+        gradients_0 = []
+        gradients_1 = []
+        for neural_1 in self.neurals_1:
+            gradient_1 = neural_1.backward(dz)
+            dx = gradient_1[2]
+            gradients_1.append(gradient_1)
+            for neural_0 in self.neurals_0:
+                gradient_0 = neural_0.backward(dx)
+                gradients_0.append(gradient_0)
+        gradients = [gradients_0,gradients_1]
+        return gradients
     
     def sgd(self,x,y):
         lr = 0.0001
         loss = 0
-        y_total = 0
+        posornegs = []
         for i in range(len(x)):
-            y_total += y[i]
-            posnegs = []
-            results = self.forward(x[i],y[i])
+            results,ret = self.forward(x[i],y[i])
+            posornegs.append(ret)
             print(x[i],y[i])
             print(results)
-            posnegs.append(results)
-            loss += abs(results)
-        y_total /= len(x)
-        dwdbs = self.backward()
-        for i in range(3):
-            dw = dwdbs[i][0]
-            db = dwdbs[i][1]
-            _w = posorneg(posnegs, loss) * dw * y_total
-            _b = posorneg(posnegs, loss) * db * y_total
-            w = self.neurals[i].getw()
-            b = self.neurals[i].getb()
-            w += lr * _w
-            b += lr * _b
-            self.neurals[i].setw(w)
-            self.neurals[i].setb(b)
-        return loss
+            loss += results
+        loss /= len(x)
+        trueloss= loss
+        loss = posorneg(posornegs,loss)
+        gradients = self.backward()        
+        for i in range(2):
+            for j in range(3):
+                gradient = gradients[i][j]
+                dw = gradient[0]
+                db = gradient[1]
+                _w = loss * dw
+                _b = loss * db
+                if i == 0:
+                    w = self.neurals_0[j].getw() + lr * _w
+                    b = self.neurals_0[j].getb() + lr * _b
+                    self.neurals_0[j].setw(w)
+                    self.neurals_0[j].setb(b)
+                else:
+                    w = self.neurals_1[j].getw() + lr * _w
+                    b = self.neurals_1[j].getb() + lr * _b
+                    self.neurals_1[j].setw(w)
+                    self.neurals_1[j].setb(b)
+        return trueloss
 
     def predict(self,test):
         outputs = 0
         true = 0
         for x in test:
             output = 0
-            for neural in self.neurals:
-                output += neural.forward(x)
-            print(f'input:{x},predict:{output},true:{x * 4}')
+            for neural_0 in self.neurals_0:
+                tempoutput = neural_0.forward(x)
+                for neural_1 in self.neurals_1:
+
+                    output += neural_1.forward(tempoutput)
+            print(f'input:{x},predict:{output},true:{x * 2}')
             outputs +=output
-            true += x*4
+            true += x*2
         print(f'Accuracy:{(outputs/true)*100}%')
     
     def train(self,_num,x_data,y_data):
@@ -196,20 +219,23 @@ class Graph:
         plt.show()
     
     def visualparm(self):
-        for nerual in self.neurals:
-            print(f'w: {nerual.getw()} b: {nerual.getb()}')
+        for nerual_0 in self.neurals_0:
+            print(f'1st layer -> w: {nerual_0.getw()} b: {nerual_0.getb()}')
+        
+        for nerual_1 in self.neurals_1:
+            print(f'2nd layer -> w: {nerual_1.getw()} b: {nerual_1.getb()}')
 
 
 def main():
-    x_data = [2,3,5,8,13,21,34]
-    y_data = [8,12,20,32,52,84,136]
+    x_data = [4,5,6]
+    y_data = [8,10,12]
     x_test = [1,4,6,7,9]
     Graph1 = Graph()
-    Graph1.train(120,x_data,y_data)
+    Graph1.train(3000,x_data,y_data)
     Graph1.visiualize()
     Graph1.predict(x_data)
     Graph1.predict(x_test)
-    #Graph1.visualparm()
+    Graph1.visualparm()
 
 
 if __name__ == '__main__':
